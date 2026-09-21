@@ -68,6 +68,15 @@ Forçar uma nova leitura mesmo sem alterações no sitemap:
 npm run collect -- --limit 50 --all
 ```
 
+Executar o fluxo completo de recolha e importação, em lotes de 500:
+
+```bash
+npm run sync:daily
+```
+
+O cron diário pode ser instalado com `./scripts/install-cron.sh`. A documentação
+operacional completa está em [docs/README.md](docs/README.md).
+
 Os snapshots são criados em:
 
 ```text

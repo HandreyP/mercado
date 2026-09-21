@@ -27,6 +27,15 @@ function mapProduct(row) {
       promotion: row.promotion,
       promotionEndsAt: row.promotion_ends_at,
       observedAt: row.observed_at,
+      previousObservedPriceCents: row.previous_observed_price_cents,
+      trend:
+        row.previous_observed_price_cents === null
+          ? null
+          : row.price_cents < row.previous_observed_price_cents
+            ? 'down'
+            : row.price_cents > row.previous_observed_price_cents
+              ? 'up'
+              : 'same',
     },
   };
 }
@@ -41,10 +50,19 @@ export async function listProducts(pool, filters) {
        offer.currency, offer.price_cents, offer.original_price_cents,
        offer.price_per_base_unit_cents, offer.base_unit, offer.promotion,
        offer.promotion_ends_at, offer.observed_at,
+       previous_offer.price_cents AS previous_observed_price_cents,
        COUNT(*) OVER()::INTEGER AS total_count
      FROM market_products AS mp
      JOIN markets AS market ON market.id = mp.market_id
      JOIN current_offers AS offer ON offer.market_product_id = mp.id
+     LEFT JOIN LATERAL (
+       SELECT historical.price_cents
+       FROM offers AS historical
+       WHERE historical.market_product_id = mp.id
+         AND historical.id <> offer.id
+       ORDER BY historical.observed_at DESC, historical.id DESC
+       LIMIT 1
+     ) AS previous_offer ON TRUE
      WHERE ($1 = '' OR mp.name ILIKE '%' || $1 || '%' OR COALESCE(mp.brand, '') ILIKE '%' || $1 || '%')
        AND ($2::BOOLEAN IS NULL OR offer.promotion = $2)
        AND ($3::TEXT IS NULL OR market.slug = $3)

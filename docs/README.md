@@ -30,6 +30,8 @@ Estão implementados:
 - PostgreSQL em Docker;
 - migrações SQL versionadas;
 - importação transacional e idempotente de snapshots;
+- sincronização atómica em lotes de até 500 produtos;
+- cron diário às 03:00 em `Europe/Lisbon`;
 - conservação dos documentos originais em `JSONB`;
 - API HTTP de produtos, filtros, promoções, estatísticas e histórico;
 - frontend simples com abas Produtos/Carrinho;
@@ -48,7 +50,7 @@ Ainda não estão implementados:
 ```mermaid
 flowchart LR
     A[Sitemaps públicos] --> B[Adaptador do mercado]
-    B --> C[Snapshot JSON]
+    B --> C[Sync diário / snapshot JSON]
     C --> D[Importador idempotente]
     D --> E[(PostgreSQL)]
     E --> F[API Express]
@@ -111,6 +113,12 @@ npm start
 ```
 
 Abrir `http://localhost:3000`.
+
+Para o funcionamento diário normal, a recolha e importação são feitas juntas:
+
+```bash
+npm run sync:daily
+```
 
 Parar a base de dados:
 
@@ -197,7 +205,59 @@ npm run import -- --file data/pingo-doce/products/<snapshot>.json
 A importação inteira é transacional. Uma falha faz `ROLLBACK` e não deixa produtos
 parcialmente importados.
 
-## 8. API HTTP
+Ofertas iguais à última observação não são inseridas novamente. Mudanças de preço,
+promoção, preço anterior ou preço unitário criam uma nova observação histórica.
+
+## 8. Sincronização automática
+
+O comando recomendado é:
+
+```bash
+npm run sync -- --limit 500 --retry-failed
+```
+
+O fluxo:
+
+1. obtém um advisory lock no PostgreSQL por supermercado;
+2. lê o estado incremental;
+3. recolhe no máximo 500 produtos válidos;
+4. grava o snapshot;
+5. importa o snapshot numa transação;
+6. atualiza o estado local apenas após o `COMMIT`;
+7. liberta o lock e apresenta mudanças de preço.
+
+Se outra sincronização estiver ativa, a segunda termina com código 3. Se a
+importação falhar, o estado não avança e os produtos permanecem elegíveis.
+
+### Cron diário
+
+Instalar ou atualizar a entrada, de forma idempotente:
+
+```bash
+./scripts/install-cron.sh
+```
+
+A tarefa instalada é:
+
+```cron
+CRON_TZ=Europe/Lisbon
+0 3 * * * /caminho/do/projeto/scripts/run-daily-sync.sh
+```
+
+Executa todos os dias às 03:00, inicia o PostgreSQL se necessário, aplica
+migrações pendentes e processa um lote de 500 com `--retry-failed`. Os logs ficam
+em `logs/daily-sync.log`.
+
+Remover a tarefa:
+
+```bash
+./scripts/remove-cron.sh
+```
+
+O cron depende de a máquina estar ligada às 03:00. Ele não recupera execuções
+perdidas durante períodos em que o sistema esteve desligado.
+
+## 9. API HTTP
 
 | Método | Endpoint | Descrição |
 |---|---|---|
@@ -224,7 +284,7 @@ Exemplo:
 GET /api/products?q=arroz&promotion=true&sort=unit_price_asc&limit=24
 ```
 
-## 9. Frontend
+## 10. Frontend
 
 O frontend está em `public/` e usa HTML, CSS e JavaScript nativos.
 
@@ -236,6 +296,8 @@ Funcionalidades:
 - ordenação por nome, preço, preço unitário ou atualização;
 - carregamento paginado;
 - indicação de preço anterior e promoção;
+- indicador de subida ou descida entre observações;
+- consulta do histórico de preços num diálogo;
 - adicionar, remover e alterar quantidades;
 - total estimado;
 - persistência do carrinho no navegador.
@@ -243,7 +305,7 @@ Funcionalidades:
 O carrinho é uma simulação: conserva o preço mostrado quando o artigo foi
 adicionado e não verifica stock, loja, entrega ou condições especiais.
 
-## 10. Testes e validação
+## 11. Testes e validação
 
 ```bash
 npm test
@@ -261,11 +323,14 @@ npm start
 
 A segunda importação deve informar que o snapshot já existe.
 
+Uma sincronização forçada sobre três produtos já importados confirmou que as três
+ofertas permaneceram inalteradas e que o total histórico não aumentou.
+
 A primeira amostra real teve 50 produtos de 25 categorias, incluindo 20
 promoções. Encontrou e permitiu corrigir multipacks e doses. Quatro produtos sem
 medida permaneceram válidos com aviso, sem inferir informação inexistente.
 
-## 11. Segurança e utilização responsável
+## 12. Segurança e utilização responsável
 
 - só são consultados sitemaps e páginas públicas permitidas;
 - não são usados endpoints internos bloqueados, login ou CAPTCHA;
@@ -276,7 +341,7 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 - a API não deve ser exposta publicamente sem autenticação, rate limiting e
   configuração de produção.
 
-## 12. Limitações conhecidas
+## 13. Limitações conhecidas
 
 - preços e disponibilidade podem depender de localização ou loja;
 - o sitemap pode conter produtos sem preço atual;
@@ -285,11 +350,20 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 - o histórico só cresce quando novos snapshots são importados;
 - promoções complexas, cartões e cupões ainda não têm modelo completo.
 
-## 13. Decisões
+## 14. Decisões
 
 - [ADR 0001 — PostgreSQL com JSONB](adr/0001-postgresql-jsonb.md)
 
-## 14. Registo de evolução
+## 15. Registo de evolução
+
+### 2026-09-21 — Sincronização diária
+
+- comando atómico `sync` com lote máximo de 500;
+- advisory lock contra execuções concorrentes;
+- estado atualizado apenas depois da importação;
+- histórico sem ofertas redundantes;
+- cron diário às 03:00 com logs locais.
+- consulta de histórico e tendência de preço no frontend.
 
 ### 2026-09-21 — Persistência, API e frontend inicial
 
@@ -315,11 +389,11 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 - normalização e validação;
 - snapshots JSON e testes com fixtures.
 
-## 15. Próximos marcos
+## 16. Próximos marcos
 
-1. automatizar recolha + importação numa única execução agendada;
-2. aumentar gradualmente a cobertura do Pingo Doce;
+1. aumentar gradualmente a cobertura do Pingo Doce através dos lotes diários;
+2. adicionar métricas e alerta para falhas do cron;
 3. modelar produtos canónicos e correspondências;
 4. adicionar um segundo supermercado;
-5. mostrar histórico e comparação no frontend;
+5. comparar o carrinho entre mercados;
 6. tratar promoções condicionais e folhetos.

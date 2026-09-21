@@ -79,13 +79,36 @@ async function upsertProduct(client, marketId, product) {
 async function insertOffer(client, marketProductId, runId, product) {
   const offer = product.offer;
   const result = await client.query(
-    `INSERT INTO offers (
-       market_product_id, scraping_run_id, observed_at, currency, price_cents,
-       original_price_cents, price_per_base_unit_cents, base_unit, promotion,
-       promotion_ends_at, promotion_text
+    `WITH previous AS MATERIALIZED (
+       SELECT currency, price_cents, original_price_cents,
+              price_per_base_unit_cents, base_unit, promotion,
+              promotion_ends_at, promotion_text
+       FROM current_offers
+       WHERE market_product_id = $1
+     ), inserted AS (
+       INSERT INTO offers (
+         market_product_id, scraping_run_id, observed_at, currency, price_cents,
+         original_price_cents, price_per_base_unit_cents, base_unit, promotion,
+         promotion_ends_at, promotion_text
+       )
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+       WHERE NOT EXISTS (
+         SELECT 1 FROM previous
+         WHERE currency = $4
+           AND price_cents = $5
+           AND original_price_cents IS NOT DISTINCT FROM $6::INTEGER
+           AND price_per_base_unit_cents IS NOT DISTINCT FROM $7::INTEGER
+           AND base_unit IS NOT DISTINCT FROM $8::TEXT
+           AND promotion = $9
+           AND promotion_ends_at IS NOT DISTINCT FROM $10::DATE
+           AND promotion_text IS NOT DISTINCT FROM $11::TEXT
+       )
+       ON CONFLICT (market_product_id, observed_at) DO NOTHING
+       RETURNING price_cents
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     ON CONFLICT (market_product_id, observed_at) DO NOTHING`,
+     SELECT
+       EXISTS (SELECT 1 FROM inserted) AS inserted,
+       (SELECT price_cents FROM previous) AS previous_price_cents`,
     [
       marketProductId,
       runId,
@@ -100,7 +123,12 @@ async function insertOffer(client, marketProductId, runId, product) {
       offer.promotionText ?? null,
     ],
   );
-  return result.rowCount;
+  const row = result.rows[0];
+  if (!row.inserted) return { status: 'unchanged' };
+  if (row.previous_price_cents === null) return { status: 'new' };
+  if (offer.priceCents < row.previous_price_cents) return { status: 'decreased' };
+  if (offer.priceCents > row.previous_price_cents) return { status: 'increased' };
+  return { status: 'changed' };
 }
 
 async function insertRawDocument(client, marketProductId, runId, product) {
@@ -160,14 +188,31 @@ export async function importSnapshot(client, { snapshot, sourceFile, hash }) {
         runId: existing.rows[0].id,
         products: 0,
         offers: 0,
+        offerChanges: {
+          inserted: 0,
+          unchanged: 0,
+          new: 0,
+          decreased: 0,
+          increased: 0,
+          changed: 0,
+        },
         errors: 0,
       };
     }
 
-    let offers = 0;
+    const offerChanges = {
+      inserted: 0,
+      unchanged: 0,
+      new: 0,
+      decreased: 0,
+      increased: 0,
+      changed: 0,
+    };
     for (const product of snapshot.products) {
       const marketProductId = await upsertProduct(client, marketId, product);
-      offers += await insertOffer(client, marketProductId, runId, product);
+      const offerResult = await insertOffer(client, marketProductId, runId, product);
+      offerChanges[offerResult.status] += 1;
+      if (offerResult.status !== 'unchanged') offerChanges.inserted += 1;
       await insertRawDocument(client, marketProductId, runId, product);
     }
 
@@ -180,7 +225,8 @@ export async function importSnapshot(client, { snapshot, sourceFile, hash }) {
       alreadyImported: false,
       runId,
       products: snapshot.products.length,
-      offers,
+      offers: offerChanges.inserted,
+      offerChanges,
       errors: snapshot.rejected.length,
     };
   } catch (error) {

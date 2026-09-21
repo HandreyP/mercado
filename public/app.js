@@ -9,6 +9,10 @@ const elements = {
   catalogStats: document.querySelector('#catalog-stats'),
   clearCart: document.querySelector('#clear-cart'),
   filters: document.querySelector('#filters'),
+  historyContent: document.querySelector('#history-content'),
+  historyDialog: document.querySelector('#history-dialog'),
+  historyTitle: document.querySelector('#history-title'),
+  closeHistory: document.querySelector('#close-history'),
   loadMore: document.querySelector('#load-more'),
   market: document.querySelector('#market'),
   products: document.querySelector('#products'),
@@ -162,12 +166,53 @@ function renderProduct(product) {
     card.append(createElement('div', 'product-meta', product.package.raw));
   }
   if (product.offer.promotion) card.append(createElement('div', 'promo', 'Em promoção'));
+  if (product.offer.trend === 'down') {
+    card.append(createElement('div', 'trend-down', 'Preço baixou'));
+  } else if (product.offer.trend === 'up') {
+    card.append(createElement('div', 'trend-up', 'Preço subiu'));
+  }
 
-  const button = createElement('button', null, 'Adicionar ao carrinho');
-  button.type = 'button';
-  button.addEventListener('click', () => addToCart(product));
-  card.append(button);
+  const actions = createElement('div', 'card-actions');
+  const historyButton = createElement('button', 'secondary', 'Histórico');
+  historyButton.type = 'button';
+  historyButton.addEventListener('click', () => showHistory(product));
+  const addButton = createElement('button', null, 'Adicionar');
+  addButton.type = 'button';
+  addButton.addEventListener('click', () => addToCart(product));
+  actions.append(historyButton, addButton);
+  card.append(actions);
   return card;
+}
+
+async function showHistory(product) {
+  elements.historyTitle.textContent = product.name;
+  elements.historyContent.replaceChildren(
+    createElement('p', 'muted', 'A carregar histórico…'),
+  );
+  elements.historyDialog.showModal();
+
+  try {
+    const response = await fetch(`/api/products/${product.id}/history`);
+    if (!response.ok) throw new Error('Não foi possível carregar o histórico.');
+    const data = await response.json();
+    elements.historyContent.replaceChildren();
+    if (data.offers.length === 0) {
+      elements.historyContent.append(createElement('p', 'empty', 'Sem observações.'));
+      return;
+    }
+    for (const offer of [...data.offers].reverse()) {
+      const row = createElement('div', 'history-row');
+      const date = new Date(offer.observedAt).toLocaleString('pt-PT');
+      const description = offer.promotion ? `${date} · promoção` : date;
+      row.append(
+        createElement('span', null, description),
+        createElement('strong', null, formatMoney(offer.priceCents)),
+      );
+      elements.historyContent.append(row);
+    }
+  } catch (error) {
+    elements.historyContent.replaceChildren(createElement('p', 'empty', error.message));
+  }
 }
 
 function productQuery() {
@@ -245,6 +290,7 @@ elements.clearCart.addEventListener('click', () => {
   cart = [];
   saveCart();
 });
+elements.closeHistory.addEventListener('click', () => elements.historyDialog.close());
 elements.tabs.forEach((tab) => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });

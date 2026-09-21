@@ -37,6 +37,13 @@ async function main() {
           `Execução ${result.runId}: ${result.products} produtos, ` +
             `${result.offers} ofertas e ${result.errors} erros importados.`,
         );
+        console.log(
+          `Ofertas: ${result.offerChanges.new} novas, ` +
+            `${result.offerChanges.decreased} descidas, ` +
+            `${result.offerChanges.increased} subidas, ` +
+            `${result.offerChanges.changed} alterações sem mudança de preço e ` +
+            `${result.offerChanges.unchanged} inalteradas.`,
+        );
       }
     } finally {
       client.release();

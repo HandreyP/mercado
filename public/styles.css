@@ -68,7 +68,11 @@ button.secondary { background: white; color: #176b3a; }
 .price { font-size: 1.2rem; font-weight: 700; }
 .old-price { color: #777; text-decoration: line-through; margin-left: .35rem; font-size: .9rem; }
 .promo { color: #a13922; font-weight: 700; font-size: .8rem; }
+.trend-down { color: #176b3a; font-weight: 700; font-size: .8rem; }
+.trend-up { color: #a13922; font-weight: 700; font-size: .8rem; }
 .product-card button { margin-top: auto; }
+.card-actions { display: flex; gap: .5rem; margin-top: auto; }
+.card-actions button { flex: 1; margin-top: 0; }
 .load-more { display: block; margin: 1.25rem auto; }
 
 .section-heading, .cart-item, .cart-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -80,6 +84,11 @@ button.secondary { background: white; color: #176b3a; }
 .remove { border-color: #9b3427; background: white; color: #9b3427; }
 .cart-summary { padding: 1.25rem 0; font-size: 1.2rem; }
 .empty { padding: 2rem; text-align: center; border: 1px dashed #bcc2b9; }
+
+dialog { width: min(620px, calc(100% - 2rem)); border: 1px solid #bcc2b9; border-radius: .4rem; }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+.dialog-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+.history-row { display: flex; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid #d8dcd5; }
 
 @media (max-width: 760px) {
   .site-header { align-items: start; flex-direction: column; }
