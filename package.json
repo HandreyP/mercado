@@ -1,0 +1,27 @@
+{
+  "name": "mercado",
+  "version": "0.1.0",
+  "description": "Recolha e normalização de preços públicos de supermercados portugueses.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "collect": "node src/index.js collect",
+    "db:down": "docker compose down",
+    "db:migrate": "node src/db/migrate.js",
+    "db:up": "docker compose up -d postgres",
+    "discover": "node src/index.js discover",
+    "import": "node src/db/import-snapshot.js",
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "cheerio": "^1.1.2",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.2.5",
+    "pg": "^8.16.3"
+  }
+}

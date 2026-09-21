@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mercado — Comparador de preços</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div>
+        <h1>Mercado</h1>
+        <p>Comparador de preços em desenvolvimento</p>
+      </div>
+      <p id="catalog-stats" class="muted">A carregar catálogo…</p>
+    </header>
+
+    <nav class="tabs" aria-label="Secções">
+      <button class="tab active" data-tab="products" aria-selected="true">Produtos</button>
+      <button class="tab" data-tab="cart" aria-selected="false">
+        Carrinho <span id="cart-count" class="badge">0</span>
+      </button>
+    </nav>
+
+    <main>
+      <section id="products-tab" class="tab-panel">
+        <form id="filters" class="filters">
+          <label>
+            Pesquisar
+            <input id="search" type="search" placeholder="Nome ou marca">
+          </label>
+          <label>
+            Supermercado
+            <select id="market">
+              <option value="">Todos</option>
+            </select>
+          </label>
+          <label>
+            Ordenar
+            <select id="sort">
+              <option value="name_asc">Nome: A–Z</option>
+              <option value="price_asc">Preço: menor primeiro</option>
+              <option value="price_desc">Preço: maior primeiro</option>
+              <option value="unit_price_asc">Preço por unidade</option>
+              <option value="newest">Atualização mais recente</option>
+            </select>
+          </label>
+          <label class="checkbox-label">
+            <input id="promotion" type="checkbox">
+            Apenas promoções
+          </label>
+          <button type="submit">Aplicar</button>
+        </form>
+
+        <p id="products-status" class="status" aria-live="polite"></p>
+        <div id="products" class="product-grid"></div>
+        <button id="load-more" class="load-more" type="button" hidden>Carregar mais</button>
+      </section>
+
+      <section id="cart-tab" class="tab-panel" hidden>
+        <div class="section-heading">
+          <div>
+            <h2>Carrinho</h2>
+            <p class="muted">Estimativa baseada no último preço recolhido.</p>
+          </div>
+          <button id="clear-cart" class="secondary" type="button">Limpar</button>
+        </div>
+        <div id="cart-items"></div>
+        <div class="cart-summary">
+          <strong>Total estimado</strong>
+          <strong id="cart-total">0,00 €</strong>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
