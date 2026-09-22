@@ -6,7 +6,7 @@ import {
   isProductSitemap,
   parseProductSitemap,
   parseSitemapIndex,
-} from '../src/markets/pingo-doce/sitemaps.js';
+} from '../src/scrapers/mercado_pingo_doce.scrap.js';
 
 const fixture = (name) =>
   readFile(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');

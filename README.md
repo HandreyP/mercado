@@ -155,12 +155,14 @@ estado, os produtos voltam a ser elegíveis na execução seguinte.
 
 ```text
 src/
+  api/                     # parsing e validação de pedidos
   core/                    # pipeline reutilizável e cliente HTTP responsável
-  markets/
-    index.js               # registo de adaptadores
-    pingo-doce/            # regras específicas do Pingo Doce
-  services/                # normalização, validação e persistência
-  index.js                 # CLI
+  repositories/           # todo o acesso ao PostgreSQL (*.repository.js)
+  scrapers/                # um mercado por mercado_<nome>.scrap.js
+  services/                # regras de negócio e persistência local
+  app.js                   # aplicação Express testável
+  server.js                # arranque do servidor
+  index.js                 # CLI de descoberta e recolha
 test/
   fixtures/                # amostras estáveis, sem pedidos à rede
 ```
@@ -172,8 +174,10 @@ Para adicionar outro supermercado, cria-se um adaptador com:
 - parser da página do produto;
 - conversão para o modelo comum.
 
-Depois, o adaptador é registado em `src/markets/index.js`. O cliente HTTP, a CLI,
-a validação e os snapshots não precisam de ser reimplementados.
+Depois, o scraper é registado em `src/scrapers/market-scrapers.js`. O cliente
+HTTP, a CLI, a validação, a sincronização e os snapshots não precisam de ser
+reimplementados. As regras e URLs do novo mercado não devem sair do respetivo
+`mercado_<nome>.scrap.js`.
 
 ## Base de dados
 
@@ -202,6 +206,12 @@ npm test
 Os testes locais usam fixtures de sitemap e páginas de produto. A execução de
 `collect` funciona também como teste de integração limitado contra as páginas
 públicas reais.
+
+O processo de desenvolvimento é Red → Green → Refactor: primeiro cria-se e
+observa-se um teste a falhar; depois implementa-se e refatora-se com a suíte
+verde. O teste arquitetural impede SQL fora de `*.repository.js` e regras do
+Pingo Doce fora de `mercado_pingo_doce.scrap.js`. A política completa está em
+[docs/README.md](docs/README.md#11-testes-e-validação).
 
 A amostra inicial de 50 produtos cobriu 25 categorias e 20 promoções. Foram
 detetadas e corrigidas regras para multipacks e doses. Produtos editoriais sem

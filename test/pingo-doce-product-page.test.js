@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { parseProductPage } from '../src/markets/pingo-doce/product-page.js';
+import { parseProductPage } from '../src/scrapers/mercado_pingo_doce.scrap.js';
 
 const fixture = (name) =>
   readFile(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');

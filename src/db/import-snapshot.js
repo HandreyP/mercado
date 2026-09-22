@@ -2,8 +2,8 @@
 
 import { parseArgs } from 'node:util';
 
-import { importSnapshot } from './importer.js';
-import { createDatabasePool } from './pool.js';
+import { createDatabaseRepository } from '../repositories/database.repository.js';
+import { ImportRepository } from '../repositories/import.repository.js';
 import { readSnapshot } from './snapshot.js';
 
 async function main() {
@@ -22,34 +22,30 @@ async function main() {
   if (!values.file) throw new Error('A opção --file é obrigatória');
 
   const input = await readSnapshot(values.file);
-  const pool = createDatabasePool();
+  const database = createDatabaseRepository();
+  const imports = new ImportRepository({ database });
   try {
-    const client = await pool.connect();
-    try {
-      const result = await importSnapshot(client, {
-        ...input,
-        sourceFile: input.absolutePath,
-      });
-      if (result.alreadyImported) {
-        console.log(`Snapshot já importado na execução ${result.runId}.`);
-      } else {
-        console.log(
-          `Execução ${result.runId}: ${result.products} produtos, ` +
-            `${result.offers} ofertas e ${result.errors} erros importados.`,
-        );
-        console.log(
-          `Ofertas: ${result.offerChanges.new} novas, ` +
-            `${result.offerChanges.decreased} descidas, ` +
-            `${result.offerChanges.increased} subidas, ` +
-            `${result.offerChanges.changed} alterações sem mudança de preço e ` +
-            `${result.offerChanges.unchanged} inalteradas.`,
-        );
-      }
-    } finally {
-      client.release();
+    const result = await imports.importSnapshot({
+      ...input,
+      sourceFile: input.absolutePath,
+    });
+    if (result.alreadyImported) {
+      console.log(`Snapshot já importado na execução ${result.runId}.`);
+    } else {
+      console.log(
+        `Execução ${result.runId}: ${result.products} produtos, ` +
+          `${result.offers} ofertas e ${result.errors} erros importados.`,
+      );
+      console.log(
+        `Ofertas: ${result.offerChanges.new} novas, ` +
+          `${result.offerChanges.decreased} descidas, ` +
+          `${result.offerChanges.increased} subidas, ` +
+          `${result.offerChanges.changed} alterações sem mudança de preço e ` +
+          `${result.offerChanges.unchanged} inalteradas.`,
+      );
     }
   } finally {
-    await pool.end();
+    await database.close();
   }
 }
 

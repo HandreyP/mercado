@@ -5,7 +5,10 @@ import { parseArgs } from 'node:util';
 import { collectProducts } from './core/collect-products.js';
 import { discoverProductCandidates } from './core/discover-products.js';
 import { HttpClient } from './core/http-client.js';
-import { getMarket, listMarkets } from './markets/index.js';
+import {
+  getMarketScraper,
+  listMarketScrapers,
+} from './scrapers/market-scrapers.js';
 import {
   readCollectionState,
   updateCollectionState,
@@ -30,7 +33,7 @@ Opções:
   --help           Mostrar esta ajuda
 
 Supermercados disponíveis:
-${listMarkets().map((market) => `  - ${market.id}: ${market.name}`).join('\n')}`);
+${listMarketScrapers().map((market) => `  - ${market.id}: ${market.name}`).join('\n')}`);
 }
 
 function readOptions(args) {
@@ -70,7 +73,7 @@ async function main() {
     return;
   }
 
-  const market = getMarket(options.market);
+  const market = getMarketScraper(options.market);
   const httpClient = new HttpClient({ useCache: !options['no-cache'] });
 
   if (command === 'discover') {

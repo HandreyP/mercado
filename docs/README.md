@@ -41,7 +41,6 @@ Ainda não estão implementados:
 
 - correspondência de produtos equivalentes entre mercados;
 - autenticação ou carrinhos por utilizador;
-- agendamento automático;
 - folhetos e OCR;
 - segundo supermercado.
 
@@ -60,7 +59,10 @@ flowchart LR
 
 Princípios:
 
-- cada fonte tem um adaptador isolado;
+- cada fonte tem um scraper isolado com o nome `mercado_<nome>.scrap.js`;
+- todo o acesso ao PostgreSQL fica em ficheiros `*.repository.js`;
+- serviços contêm regras de negócio e recebem dependências explicitamente;
+- CLIs e servidor apenas compõem dependências e tratam entrada/saída;
 - o snapshot é evidência imutável da recolha;
 - o PostgreSQL contém o modelo consultável e histórico;
 - o documento bruto também é conservado em `JSONB`;
@@ -71,17 +73,43 @@ Princípios:
 ### Estrutura de diretórios
 
 ```text
-db/migrations/               migrações SQL ordenadas
-docs/                        documentação viva e ADRs
-public/                      frontend sem framework
-src/api/                     filtros e consultas da API
-src/core/                    descoberta e pipeline comum
-src/db/                      ligação, migrações e importação
-src/markets/pingo-doce/      regras específicas do Pingo Doce
-src/services/                normalização, validação e ficheiros
-test/                        testes e fixtures estáveis
-data/                        snapshots e estado local, não versionados
+db/migrations/                         migrações SQL ordenadas
+docs/                                  documentação viva e ADRs
+public/                                frontend sem framework
+src/api/                               parsing e validação da API
+src/core/                              descoberta e pipeline comum
+src/db/                                CLIs de migração/importação e snapshots
+src/repositories/*.repository.js       todo o SQL e acesso ao driver `pg`
+src/scrapers/mercado_*.scrap.js        URLs e regras específicas de cada mercado
+src/scrapers/market-scrapers.js        registo dos scrapers disponíveis
+src/services/                          regras de negócio e persistência local
+src/app.js                             aplicação HTTP testável, sem abrir porta
+src/server.js                          composição e arranque do processo HTTP
+test/                                  testes e fixtures estáveis
+data/                                  snapshots e estado local, não versionados
 ```
+
+### Fronteiras automáticas
+
+`test/architecture.test.js` percorre o código-fonte e falha se encontrar:
+
+- uso de `.query(...)` ou importação de `pg` fora de um `*.repository.js`;
+- uma URL do Pingo Doce fora de `mercado_pingo_doce.scrap.js`;
+- ausência dos pontos de extensão obrigatórios de repositório e scraper.
+
+Assim, a organização não depende apenas de convenção ou revisão manual.
+
+### Adicionar outro supermercado
+
+1. criar `src/scrapers/mercado_<nome>.scrap.js` com `id`, `name`, descoberta e
+   parsing para o modelo comum;
+2. criar fixtures e testes do parser antes da implementação;
+3. registar o scraper em `src/scrapers/market-scrapers.js`;
+4. executar `npm test` e uma recolha pequena de integração;
+5. atualizar este documento no mesmo incremento.
+
+Não é necessário alterar a sincronização, o importador, a API ou o frontend para
+que um novo scraper produza dados no modelo comum.
 
 ## 4. Arranque rápido
 
@@ -311,7 +339,27 @@ adicionado e não verifica stock, loja, entrega ou condições especiais.
 npm test
 ```
 
-Os testes unitários não dependem da rede nem da base. A validação completa inclui:
+### Processo TDD obrigatório
+
+Todo comportamento novo ou correção segue **Red → Green → Refactor**:
+
+1. escrever um teste que expresse o comportamento e observar a falha;
+2. implementar apenas o necessário para o teste passar;
+3. refatorar mantendo toda a suíte verde;
+4. executar `npm test` antes de concluir;
+5. executar integração real quando a alteração tocar PostgreSQL, HTTP, ficheiros
+   operacionais ou scraping;
+6. atualizar esta documentação e, para decisões arquiteturais, criar um ADR.
+
+Nenhuma funcionalidade é considerada concluída sem teste proporcional ao risco.
+Testes unitários não dependem da rede nem da base: usam fixtures e dependências
+falsas. `test/architecture.test.js` protege as fronteiras acordadas. O servidor
+expõe handlers testáveis sem abrir sockets, e o processo que escuta a porta fica
+isolado em `src/server.js`.
+
+### Validação de integração
+
+A validação completa inclui:
 
 ```bash
 npm run db:up
@@ -353,8 +401,22 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 ## 14. Decisões
 
 - [ADR 0001 — PostgreSQL com JSONB](adr/0001-postgresql-jsonb.md)
+- [ADR 0002 — Organização por fronteiras e TDD](adr/0002-organizacao-e-tdd.md)
 
 ## 15. Registo de evolução
+
+### 2026-09-21 — Organização por fronteiras e TDD
+
+- todos os acessos ao PostgreSQL concentrados em `src/repositories/`;
+- conexão, transações e advisory locks encapsulados em `database.repository.js`;
+- catálogo, importação e migrações separados em repositórios próprios;
+- Pingo Doce consolidado em `mercado_pingo_doce.scrap.js`;
+- registo extensível de scrapers para futuros mercados;
+- orquestração da sincronização extraída para um serviço injetável;
+- aplicação Express separada do processo HTTP;
+- testes unitários para BD, catálogo, importação, migrações, sync e handlers;
+- teste arquitetural impede que SQL ou regras de mercado voltem a espalhar-se;
+- política Red → Green → Refactor adotada como definição de pronto.
 
 ### 2026-09-21 — Sincronização diária
 

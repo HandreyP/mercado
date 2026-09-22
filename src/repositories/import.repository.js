@@ -2,6 +2,17 @@ function json(value) {
   return JSON.stringify(value ?? null);
 }
 
+function emptyOfferChanges() {
+  return {
+    inserted: 0,
+    unchanged: 0,
+    new: 0,
+    decreased: 0,
+    increased: 0,
+    changed: 0,
+  };
+}
+
 async function upsertMarket(client, market) {
   const result = await client.query(
     `INSERT INTO markets (slug, name)
@@ -39,7 +50,6 @@ async function createRun(client, marketId, snapshot, sourceFile, hash) {
 }
 
 async function upsertProduct(client, marketId, product) {
-  const observedAt = product.collectedAt;
   const result = await client.query(
     `INSERT INTO market_products (
        market_id, external_id, name, brand, description, categories, url,
@@ -70,7 +80,7 @@ async function upsertProduct(client, marketId, product) {
       json(product.images ?? []),
       json(product.package),
       json({ source: product.source, warnings: product.warnings ?? [] }),
-      observedAt,
+      product.collectedAt,
     ],
   );
   return result.rows[0].id;
@@ -124,11 +134,11 @@ async function insertOffer(client, marketProductId, runId, product) {
     ],
   );
   const row = result.rows[0];
-  if (!row.inserted) return { status: 'unchanged' };
-  if (row.previous_price_cents === null) return { status: 'new' };
-  if (offer.priceCents < row.previous_price_cents) return { status: 'decreased' };
-  if (offer.priceCents > row.previous_price_cents) return { status: 'increased' };
-  return { status: 'changed' };
+  if (!row.inserted) return 'unchanged';
+  if (row.previous_price_cents === null) return 'new';
+  if (offer.priceCents < row.previous_price_cents) return 'decreased';
+  if (offer.priceCents > row.previous_price_cents) return 'increased';
+  return 'changed';
 }
 
 async function insertRawDocument(client, marketProductId, runId, product) {
@@ -171,66 +181,57 @@ async function insertError(client, runId, rejected, fallbackAttemptedAt) {
   );
 }
 
-export async function importSnapshot(client, { snapshot, sourceFile, hash }) {
-  await client.query('BEGIN');
-  try {
-    const marketId = await upsertMarket(client, snapshot.market);
-    const runId = await createRun(client, marketId, snapshot, sourceFile, hash);
+async function importWithinTransaction(client, { snapshot, sourceFile, hash }) {
+  const marketId = await upsertMarket(client, snapshot.market);
+  const runId = await createRun(client, marketId, snapshot, sourceFile, hash);
 
-    if (!runId) {
-      const existing = await client.query(
-        'SELECT id FROM scraping_runs WHERE snapshot_sha256 = $1',
-        [hash],
-      );
-      await client.query('COMMIT');
-      return {
-        alreadyImported: true,
-        runId: existing.rows[0].id,
-        products: 0,
-        offers: 0,
-        offerChanges: {
-          inserted: 0,
-          unchanged: 0,
-          new: 0,
-          decreased: 0,
-          increased: 0,
-          changed: 0,
-        },
-        errors: 0,
-      };
-    }
-
-    const offerChanges = {
-      inserted: 0,
-      unchanged: 0,
-      new: 0,
-      decreased: 0,
-      increased: 0,
-      changed: 0,
-    };
-    for (const product of snapshot.products) {
-      const marketProductId = await upsertProduct(client, marketId, product);
-      const offerResult = await insertOffer(client, marketProductId, runId, product);
-      offerChanges[offerResult.status] += 1;
-      if (offerResult.status !== 'unchanged') offerChanges.inserted += 1;
-      await insertRawDocument(client, marketProductId, runId, product);
-    }
-
-    for (const rejected of snapshot.rejected) {
-      await insertError(client, runId, rejected, snapshot.finishedAt);
-    }
-
-    await client.query('COMMIT');
+  if (!runId) {
+    const existing = await client.query(
+      'SELECT id FROM scraping_runs WHERE snapshot_sha256 = $1',
+      [hash],
+    );
     return {
-      alreadyImported: false,
-      runId,
-      products: snapshot.products.length,
-      offers: offerChanges.inserted,
-      offerChanges,
-      errors: snapshot.rejected.length,
+      alreadyImported: true,
+      runId: existing.rows[0].id,
+      products: 0,
+      offers: 0,
+      offerChanges: emptyOfferChanges(),
+      errors: 0,
     };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
+  }
+
+  const offerChanges = emptyOfferChanges();
+  for (const product of snapshot.products) {
+    const marketProductId = await upsertProduct(client, marketId, product);
+    const status = await insertOffer(client, marketProductId, runId, product);
+    offerChanges[status] += 1;
+    if (status !== 'unchanged') offerChanges.inserted += 1;
+    await insertRawDocument(client, marketProductId, runId, product);
+  }
+
+  for (const rejected of snapshot.rejected) {
+    await insertError(client, runId, rejected, snapshot.finishedAt);
+  }
+
+  return {
+    alreadyImported: false,
+    runId,
+    products: snapshot.products.length,
+    offers: offerChanges.inserted,
+    offerChanges,
+    errors: snapshot.rejected.length,
+  };
+}
+
+export class ImportRepository {
+  constructor({ database }) {
+    this.database = database;
+  }
+
+  importSnapshot(input, { client = null } = {}) {
+    return this.database.withTransaction(
+      (transactionClient) => importWithinTransaction(transactionClient, input),
+      { client },
+    );
   }
 }
