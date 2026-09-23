@@ -9,6 +9,7 @@ test('aplica valores predefinidos aos filtros', () => {
     sort: 'name_asc',
     promotion: null,
     market: null,
+    category: null,
     limit: 24,
     offset: 0,
   });
@@ -21,6 +22,7 @@ test('interpreta pesquisa, ordenação, paginação e promoção', () => {
       sort: 'price_asc',
       promotion: 'true',
       market: 'pingo-doce',
+      category: 'Mercearia',
       limit: '50',
       offset: '100',
     }),
@@ -29,6 +31,7 @@ test('interpreta pesquisa, ordenação, paginação e promoção', () => {
       sort: 'price_asc',
       promotion: true,
       market: 'pingo-doce',
+      category: 'Mercearia',
       limit: 50,
       offset: 100,
     },

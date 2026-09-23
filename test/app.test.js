@@ -7,6 +7,7 @@ function fakeCatalog(overrides = {}) {
   return {
     getCatalogStats: async () => ({}),
     getProductHistory: async () => null,
+    listCategories: async () => [],
     listMarkets: async () => [],
     listProducts: async () => ({ items: [], total: 0 }),
     ...overrides,
@@ -129,4 +130,43 @@ test('canonicalProduct devolve correspondências e valida o identificador', asyn
 
   assert.deepEqual(found.body, canonical);
   assert.equal(invalid.statusCode, 400);
+});
+
+test('categories devolve as categorias principais do catálogo', async () => {
+  const items = [{ name: 'Mercearia', productCount: 210 }];
+  const handlers = createApiHandlers({
+    canonicalProductRepository: fakeCanonicalProducts(),
+    catalogRepository: fakeCatalog({ listCategories: async () => items }),
+    database: { healthCheck: async () => {} },
+    syncExecutionRepository: fakeSyncExecutions(),
+  });
+  const response = fakeResponse();
+
+  await handlers.categories({}, response, assert.fail);
+
+  assert.deepEqual(response.body, { items });
+});
+
+test('startSync aceita uma execução em background e rejeita duplicados', async () => {
+  const responses = [
+    { started: true },
+    { started: false, reason: 'already_running' },
+  ];
+  const handlers = createApiHandlers({
+    canonicalProductRepository: fakeCanonicalProducts(),
+    catalogRepository: fakeCatalog(),
+    database: { healthCheck: async () => {} },
+    syncExecutionRepository: fakeSyncExecutions(),
+    syncLauncher: { start: () => responses.shift() },
+  });
+  const accepted = fakeResponse();
+  const conflict = fakeResponse();
+
+  await handlers.startSync({}, accepted, assert.fail);
+  await handlers.startSync({}, conflict, assert.fail);
+
+  assert.equal(accepted.statusCode, 202);
+  assert.deepEqual(accepted.body, { status: 'started' });
+  assert.equal(conflict.statusCode, 409);
+  assert.deepEqual(conflict.body, { error: 'Sincronização já está em curso' });
 });

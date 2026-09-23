@@ -49,6 +49,7 @@ test('mapeia linhas SQL para o contrato público de produtos', async () => {
     sort: 'price_asc',
     promotion: null,
     market: null,
+    category: 'Mercearia',
     limit: 24,
     offset: 0,
   });
@@ -57,7 +58,14 @@ test('mapeia linhas SQL para o contrato público de produtos', async () => {
   assert.equal(result.items[0].externalId, '1805');
   assert.equal(result.items[0].canonicalProductId, '30');
   assert.equal(result.items[0].offer.trend, 'down');
-  assert.deepEqual(database.calls[0].parameters, ['', null, null, 24, 0]);
+  assert.deepEqual(database.calls[0].parameters, [
+    '',
+    null,
+    null,
+    'Mercearia',
+    24,
+    0,
+  ]);
 });
 
 test('devolve null quando o produto não existe no histórico', async () => {
@@ -77,6 +85,24 @@ test('lista mercados através do repositório', async () => {
   assert.deepEqual(await repository.listMarkets(), [
     { id: 'pingo-doce', name: 'Pingo Doce' },
   ]);
+});
+
+test('lista categorias principais com contagem de produtos', async () => {
+  const database = databaseReturning({
+    rows: [
+      { name: 'Mercearia', product_count: 210 },
+      { name: 'Laticínios', product_count: 90 },
+    ],
+  });
+  const repository = new CatalogRepository({ database });
+
+  const result = await repository.listCategories();
+
+  assert.deepEqual(result, [
+    { name: 'Mercearia', productCount: 210 },
+    { name: 'Laticínios', productCount: 90 },
+  ]);
+  assert.match(database.calls[0].sql, /categories\[1\]/);
 });
 
 test('apresenta cobertura do catálogo a partir da descoberta mais recente', async () => {

@@ -75,12 +75,14 @@ export class CatalogRepository {
        WHERE ($1 = '' OR mp.name ILIKE '%' || $1 || '%' OR COALESCE(mp.brand, '') ILIKE '%' || $1 || '%')
          AND ($2::BOOLEAN IS NULL OR offer.promotion = $2)
          AND ($3::TEXT IS NULL OR market.slug = $3)
+         AND ($4::TEXT IS NULL OR mp.categories @> ARRAY[$4]::TEXT[])
        ORDER BY ${orderBy}
-       LIMIT $4 OFFSET $5`,
+       LIMIT $5 OFFSET $6`,
       [
         filters.search,
         filters.promotion,
         filters.market,
+        filters.category,
         filters.limit,
         filters.offset,
       ],
@@ -177,5 +179,19 @@ export class CatalogRepository {
       'SELECT slug AS id, name FROM markets ORDER BY name',
     );
     return result.rows;
+  }
+
+  async listCategories() {
+    const result = await this.database.query(
+      `SELECT categories[1] AS name, COUNT(*)::INTEGER AS product_count
+       FROM market_products
+       WHERE ARRAY_LENGTH(categories, 1) > 0
+       GROUP BY categories[1]
+       ORDER BY categories[1]`,
+    );
+    return result.rows.map((row) => ({
+      name: row.name,
+      productCount: row.product_count,
+    }));
   }
 }

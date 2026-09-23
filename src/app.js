@@ -9,6 +9,7 @@ export function createApiHandlers({
   catalogRepository,
   database,
   syncExecutionRepository,
+  syncLauncher,
 }) {
   return {
     async health(_request, response, next) {
@@ -23,6 +24,14 @@ export function createApiHandlers({
     async markets(_request, response, next) {
       try {
         response.json({ items: await catalogRepository.listMarkets() });
+      } catch (error) {
+        next(error);
+      }
+    },
+
+    async categories(_request, response, next) {
+      try {
+        response.json({ items: await catalogRepository.listCategories() });
       } catch (error) {
         next(error);
       }
@@ -93,6 +102,19 @@ export function createApiHandlers({
         next(error);
       }
     },
+
+    async startSync(_request, response, next) {
+      try {
+        const result = syncLauncher.start();
+        if (!result.started) {
+          response.status(409).json({ error: 'Sincronização já está em curso' });
+          return;
+        }
+        response.status(202).json({ status: 'started' });
+      } catch (error) {
+        next(error);
+      }
+    },
   };
 }
 
@@ -101,6 +123,7 @@ export function createApp({
   catalogRepository,
   database,
   syncExecutionRepository,
+  syncLauncher,
 }) {
   const app = express();
   const handlers = createApiHandlers({
@@ -108,6 +131,7 @@ export function createApp({
     catalogRepository,
     database,
     syncExecutionRepository,
+    syncLauncher,
   });
 
   app.disable('x-powered-by');
@@ -116,11 +140,13 @@ export function createApp({
 
   app.get('/api/health', handlers.health);
   app.get('/api/markets', handlers.markets);
+  app.get('/api/categories', handlers.categories);
   app.get('/api/products', handlers.products);
   app.get('/api/products/:id/history', handlers.history);
   app.get('/api/canonical-products/:id', handlers.canonicalProduct);
   app.get('/api/stats', handlers.stats);
   app.get('/api/sync-status', handlers.syncStatus);
+  app.post('/api/sync', handlers.startSync);
 
   app.use('/api', (_request, response) => {
     response.status(404).json({ error: 'Endpoint não encontrado' });

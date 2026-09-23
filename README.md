@@ -26,6 +26,7 @@ O primeiro marco está funcional:
 - repete o fluxo diário em falhas transitórias e regista cada tentativa;
 - mantém identidades canónicas e correspondências explícitas;
 - apresenta no frontend o estado da última recolha.
+- permite filtrar produtos por categoria e iniciar um lote manual pelo frontend.
 
 Os folhetos e OCR ainda não fazem parte deste incremento.
 
@@ -227,6 +228,13 @@ quantidade inventada.
 Após o primeiro lote alargado, o catálogo local contém 550 produtos e 550
 identidades canónicas, sobre 15.997 entradas descobertas no Pingo Doce. A
 cobertura continua a crescer em lotes diários de até 500.
+
+Os 3% apresentados correspondem a 550 produtos importados sobre 15.997 entradas
+descobertas. A diferença existe porque a descoberta lê o sitemap, enquanto a
+importação visita e valida cada página com limitação de frequência.
+
+A validação seguinte, iniciada pelo botão do frontend, aumentou o catálogo para
+1.047 produtos e a cobertura estimada para 7%.
 
 ## Limitações atuais
 

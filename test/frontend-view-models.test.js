@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  formatCategoryLabel,
   formatCatalogSummary,
+  formatSyncActionStatus,
   formatSyncStatus,
 } from '../public/view-models.js';
 
@@ -37,4 +39,19 @@ test('apresenta recolha concluída e quantidade recolhida', () => {
   assert.equal(result.tone, 'success');
   assert.equal(result.label, 'Catálogo atualizado');
   assert.match(result.detail, /500 produtos/);
+});
+
+test('formata categorias e retorno do botão de sincronização', () => {
+  assert.equal(
+    formatCategoryLabel({ name: 'Mercearia', productCount: 210 }),
+    'Mercearia (210)',
+  );
+  assert.deepEqual(formatSyncActionStatus(202), {
+    tone: 'running',
+    label: 'Sincronização iniciada',
+  });
+  assert.deepEqual(formatSyncActionStatus(409), {
+    tone: 'running',
+    label: 'Já existe uma sincronização em curso',
+  });
 });

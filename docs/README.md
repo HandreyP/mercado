@@ -39,6 +39,8 @@ Estão implementados:
 - identidades canónicas e correspondências explícitas por produto;
 - API HTTP de produtos, filtros, promoções, estatísticas e histórico;
 - API e painel frontend com estado da última sincronização;
+- categorias principais com contagem e filtro no catálogo;
+- sincronização manual em segundo plano através do frontend;
 - frontend simples com abas Produtos/Carrinho;
 - carrinho persistente em `localStorage`.
 
@@ -203,6 +205,19 @@ npm run collect -- --limit 50 --all
 O estado fica em `data/<mercado>/state.json`. Contém URL, `lastmod`, tentativas,
 falhas, última recolha e último preço, mas não substitui o catálogo na base.
 
+### Porque a cobertura inicial é 3%
+
+O sitemap mais recente expôs 15.997 entradas. O catálogo contém 550 produtos
+importados: `550 / 15.997 = 3,44%`, apresentado como 3% após arredondamento. A
+descoberta lê URLs do sitemap rapidamente; a cobertura só aumenta depois de cada
+página ser visitada, validada e importada.
+
+O limite de 500 produtos por lote e o intervalo mínimo de 750 ms são deliberados
+para reduzir carga na fonte. Com uma execução diária, cobrir todas as entradas
+atuais demoraria cerca de 31 lotes, sem contar rejeições, alterações ou produtos
+indisponíveis. O botão manual permite iniciar lotes adicionais, mas mantém os
+mesmos limites e não permite concorrência.
+
 ## 7. PostgreSQL
 
 ### Modelo
@@ -327,11 +342,13 @@ perdidas durante períodos em que o sistema esteve desligado.
 |---|---|---|
 | `GET` | `/api/health` | Estado da ligação à base |
 | `GET` | `/api/markets` | Mercados disponíveis |
+| `GET` | `/api/categories` | Categorias principais e número de produtos |
 | `GET` | `/api/stats` | Totais do catálogo |
 | `GET` | `/api/products` | Pesquisa, filtros, ordenação e paginação |
 | `GET` | `/api/products/:id/history` | Histórico de um produto |
 | `GET` | `/api/canonical-products/:id` | Identidade canónica e correspondências |
 | `GET` | `/api/sync-status` | Última tentativa e último sucesso por mercado |
+| `POST` | `/api/sync` | Inicia em segundo plano um lote manual de até 500 |
 
 Parâmetros de `/api/products`:
 
@@ -339,6 +356,7 @@ Parâmetros de `/api/products`:
 |---|---|
 | `q` | Nome ou marca, máximo de 100 caracteres |
 | `market` | Slug do mercado |
+| `category` | Categoria presente no produto |
 | `promotion` | `true` ou `false` |
 | `sort` | `name_asc`, `price_asc`, `price_desc`, `unit_price_asc`, `newest` |
 | `limit` | 1–100, predefinição 24 |
@@ -359,6 +377,7 @@ Funcionalidades:
 - abas Produtos e Carrinho;
 - pesquisa por nome ou marca;
 - filtro por mercado e promoção;
+- filtro por categoria principal, com contagem;
 - ordenação por nome, preço, preço unitário ou atualização;
 - carregamento paginado;
 - indicação de preço anterior e promoção;
@@ -369,6 +388,11 @@ Funcionalidades:
 - persistência do carrinho no navegador.
 - cobertura estimada do catálogo;
 - estado visível da recolha, último sucesso e falha mais recente.
+- botão para iniciar uma sincronização manual em segundo plano.
+
+O botão é desativado enquanto a instância atual do servidor executa um lote. O
+advisory lock PostgreSQL continua a impedir concorrência com o cron ou outras
+instâncias. Cada clique aceite pode consultar e importar até mais 500 produtos.
 
 O carrinho é uma simulação: conserva o preço mostrado quando o artigo foi
 adicionado e não verifica stock, loja, entrega ou condições especiais.
@@ -421,6 +445,13 @@ correspondências iniciais. A cobertura observada é de aproximadamente 3% e o
 catálogo contém 386 promoções. Os endpoints de estatísticas, estado da
 sincronização e produto canónico foram verificados contra o PostgreSQL real.
 
+Na validação do botão do frontend, um segundo lote terminou em background em 6
+minutos e 33 segundos: recolheu 500 produtos válidos, documentou 38 rejeições,
+criou 497 produtos novos, detetou uma descida de preço e manteve duas ofertas
+inalteradas. O catálogo ficou com 1.047 produtos, 1.048 observações, 698
+promoções e 7% de cobertura. Existem 1.047 identidades e correspondências
+canónicas, sem quebra da relação 1:1 inicial.
+
 A primeira amostra real teve 50 produtos de 25 categorias, incluindo 20
 promoções. Encontrou e permitiu corrigir multipacks e doses. Quatro produtos sem
 medida permaneceram válidos com aviso, sem inferir informação inexistente.
@@ -435,6 +466,8 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 - credenciais do Compose são apenas para desenvolvimento local;
 - a API não deve ser exposta publicamente sem autenticação, rate limiting e
   configuração de produção.
+- `POST /api/sync` é uma operação administrativa local; deve receber autenticação
+  antes de qualquer exposição pública.
 
 ## 13. Limitações conhecidas
 
@@ -465,6 +498,15 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 - identidade canónica criada na mesma transação das novas importações;
 - endpoint para consultar correspondências de uma identidade canónica;
 - nenhum segundo mercado adicionado neste marco.
+
+### 2026-09-23 — Categorias e sincronização pelo frontend
+
+- categorias principais agregadas a partir do primeiro nível do produto;
+- filtro `category` em `/api/products`;
+- endpoint `/api/categories` com contagens;
+- launcher em background com proteção local e advisory lock global;
+- endpoint `POST /api/sync` e botão “Sincronizar agora”;
+- polling do estado da recolha sem manter o pedido HTTP aberto.
 
 ### 2026-09-21 — Organização por fronteiras e TDD
 

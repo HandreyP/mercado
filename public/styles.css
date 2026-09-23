@@ -45,14 +45,15 @@ h1, h2, h3, p { margin-top: 0; }
 .badge { background: #176b3a; color: white; border-radius: 1rem; padding: .1rem .45rem; }
 
 main { padding: 1.25rem 0 3rem; }
-.sync-status { display: grid; gap: .15rem; margin-bottom: 1rem; padding: .75rem 1rem; border-left: 4px solid #788076; background: white; }
+.sync-status { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; padding: .75rem 1rem; border-left: 4px solid #788076; background: white; }
+.sync-copy { display: grid; gap: .15rem; }
 .sync-status span { color: #62685f; font-size: .9rem; }
 .sync-status[data-tone="success"] { border-color: #176b3a; }
 .sync-status[data-tone="running"] { border-color: #b07a16; }
 .sync-status[data-tone="error"] { border-color: #9b3427; }
 .filters {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr auto auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
   gap: .75rem;
   align-items: end;
 }
@@ -97,6 +98,7 @@ dialog::backdrop { background: rgb(0 0 0 / .35); }
 
 @media (max-width: 760px) {
   .site-header { align-items: start; flex-direction: column; }
+  .sync-status { align-items: stretch; flex-direction: column; }
   .filters { grid-template-columns: 1fr; }
   .checkbox-label { padding-bottom: 0; }
   .cart-item { align-items: start; flex-wrap: wrap; }

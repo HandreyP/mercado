@@ -1,4 +1,9 @@
-import { formatCatalogSummary, formatSyncStatus } from './view-models.js';
+import {
+  formatCategoryLabel,
+  formatCatalogSummary,
+  formatSyncActionStatus,
+  formatSyncStatus,
+} from './view-models.js';
 
 const CART_KEY = 'mercado-cart-v1';
 const PAGE_SIZE = 24;
@@ -8,6 +13,7 @@ const elements = {
   cartCount: document.querySelector('#cart-count'),
   cartItems: document.querySelector('#cart-items'),
   cartTotal: document.querySelector('#cart-total'),
+  category: document.querySelector('#category'),
   catalogStats: document.querySelector('#catalog-stats'),
   clearCart: document.querySelector('#clear-cart'),
   filters: document.querySelector('#filters'),
@@ -24,12 +30,14 @@ const elements = {
   sort: document.querySelector('#sort'),
   syncDetail: document.querySelector('#sync-detail'),
   syncLabel: document.querySelector('#sync-label'),
+  syncNow: document.querySelector('#sync-now'),
   syncStatus: document.querySelector('#sync-status'),
   tabs: document.querySelectorAll('.tab'),
 };
 
 let cart = loadCart();
 let offset = 0;
+let syncWasRunning = false;
 let total = 0;
 
 function createElement(tag, className, text) {
@@ -228,6 +236,7 @@ function productQuery() {
     offset: String(offset),
   });
   if (elements.market.value) params.set('market', elements.market.value);
+  if (elements.category.value) params.set('category', elements.category.value);
   if (elements.promotion.checked) params.set('promotion', 'true');
   return params;
 }
@@ -252,30 +261,83 @@ async function loadProducts({ append = false } = {}) {
 
 async function loadMetadata() {
   try {
-    const [marketsResponse, statsResponse, syncResponse] = await Promise.all([
+    const [marketsResponse, categoriesResponse, statsResponse] = await Promise.all([
       fetch('/api/markets'),
+      fetch('/api/categories'),
       fetch('/api/stats'),
-      fetch('/api/sync-status'),
     ]);
-    if (!marketsResponse.ok || !statsResponse.ok || !syncResponse.ok) throw new Error();
+    if (!marketsResponse.ok || !categoriesResponse.ok || !statsResponse.ok) {
+      throw new Error();
+    }
     const markets = await marketsResponse.json();
+    const categories = await categoriesResponse.json();
     const stats = await statsResponse.json();
-    const sync = await syncResponse.json();
+    elements.market.replaceChildren(createElement('option', null, 'Todos'));
+    elements.market.firstElementChild.value = '';
     for (const market of markets.items) {
       const option = createElement('option', null, market.name);
       option.value = market.id;
       elements.market.append(option);
     }
+    elements.category.replaceChildren(createElement('option', null, 'Todas'));
+    elements.category.firstElementChild.value = '';
+    for (const category of categories.items) {
+      const option = createElement('option', null, formatCategoryLabel(category));
+      option.value = category.name;
+      elements.category.append(option);
+    }
     elements.catalogStats.textContent = formatCatalogSummary(stats);
-    const status = formatSyncStatus(sync.items[0]);
+  } catch {
+    elements.catalogStats.textContent = 'Catálogo indisponível';
+  }
+}
+
+async function loadSyncStatus() {
+  try {
+    const response = await fetch('/api/sync-status');
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    const current = data.items[0];
+    const status = formatSyncStatus(current);
     elements.syncStatus.dataset.tone = status.tone;
     elements.syncLabel.textContent = status.label;
     elements.syncDetail.textContent = status.detail;
+    elements.syncNow.disabled = current?.status === 'running';
+    if (current?.status === 'running') {
+      syncWasRunning = true;
+      window.setTimeout(loadSyncStatus, 5_000);
+    } else if (syncWasRunning) {
+      syncWasRunning = false;
+      await loadMetadata();
+      offset = 0;
+      await loadProducts();
+    }
   } catch {
-    elements.catalogStats.textContent = 'Catálogo indisponível';
     elements.syncStatus.dataset.tone = 'error';
     elements.syncLabel.textContent = 'Estado indisponível';
     elements.syncDetail.textContent = 'Não foi possível consultar a sincronização.';
+    elements.syncNow.disabled = false;
+  }
+}
+
+async function startSync() {
+  elements.syncNow.disabled = true;
+  try {
+    const response = await fetch('/api/sync', { method: 'POST' });
+    const status = formatSyncActionStatus(response.status);
+    elements.syncStatus.dataset.tone = status.tone;
+    elements.syncLabel.textContent = status.label;
+    elements.syncDetail.textContent =
+      response.status === 202
+        ? 'O lote de até 500 produtos está a correr em segundo plano.'
+        : 'Aguarde pela conclusão antes de iniciar outro lote.';
+    window.setTimeout(loadSyncStatus, 1_500);
+  } catch {
+    const status = formatSyncActionStatus(500);
+    elements.syncStatus.dataset.tone = status.tone;
+    elements.syncLabel.textContent = status.label;
+    elements.syncDetail.textContent = 'Confirme se o servidor está disponível.';
+    elements.syncNow.disabled = false;
   }
 }
 
@@ -292,6 +354,10 @@ elements.market.addEventListener('change', () => {
   offset = 0;
   loadProducts();
 });
+elements.category.addEventListener('change', () => {
+  offset = 0;
+  loadProducts();
+});
 elements.promotion.addEventListener('change', () => {
   offset = 0;
   loadProducts();
@@ -305,10 +371,12 @@ elements.clearCart.addEventListener('click', () => {
   saveCart();
 });
 elements.closeHistory.addEventListener('click', () => elements.historyDialog.close());
+elements.syncNow.addEventListener('click', startSync);
 elements.tabs.forEach((tab) => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
 renderCart();
 loadMetadata();
+loadSyncStatus();
 loadProducts();

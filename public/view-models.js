@@ -16,6 +16,20 @@ export function formatCatalogSummary({
   return parts.join(' · ');
 }
 
+export function formatCategoryLabel({ name, productCount }) {
+  return `${name} (${productCount})`;
+}
+
+export function formatSyncActionStatus(statusCode) {
+  if (statusCode === 202) {
+    return { label: 'Sincronização iniciada', tone: 'running' };
+  }
+  if (statusCode === 409) {
+    return { label: 'Já existe uma sincronização em curso', tone: 'running' };
+  }
+  return { label: 'Não foi possível iniciar a sincronização', tone: 'error' };
+}
+
 export function formatSyncStatus(status) {
   if (!status) {
     return {

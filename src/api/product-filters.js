@@ -32,6 +32,7 @@ export function parseProductFilters(query) {
     sort,
     promotion,
     market: query.market ? String(query.market).slice(0, 80) : null,
+    category: query.category ? String(query.category).trim().slice(0, 120) : null,
     limit: parseInteger(query.limit, 24, { min: 1, max: 100 }),
     offset: parseInteger(query.offset, 0, { min: 0, max: 1_000_000 }),
   };
