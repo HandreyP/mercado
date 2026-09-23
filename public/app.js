@@ -1,3 +1,5 @@
+import { formatCatalogSummary, formatSyncStatus } from './view-models.js';
+
 const CART_KEY = 'mercado-cart-v1';
 const PAGE_SIZE = 24;
 const money = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' });
@@ -20,6 +22,9 @@ const elements = {
   promotion: document.querySelector('#promotion'),
   search: document.querySelector('#search'),
   sort: document.querySelector('#sort'),
+  syncDetail: document.querySelector('#sync-detail'),
+  syncLabel: document.querySelector('#sync-label'),
+  syncStatus: document.querySelector('#sync-status'),
   tabs: document.querySelectorAll('.tab'),
 };
 
@@ -247,21 +252,30 @@ async function loadProducts({ append = false } = {}) {
 
 async function loadMetadata() {
   try {
-    const [marketsResponse, statsResponse] = await Promise.all([
+    const [marketsResponse, statsResponse, syncResponse] = await Promise.all([
       fetch('/api/markets'),
       fetch('/api/stats'),
+      fetch('/api/sync-status'),
     ]);
-    if (!marketsResponse.ok || !statsResponse.ok) throw new Error();
+    if (!marketsResponse.ok || !statsResponse.ok || !syncResponse.ok) throw new Error();
     const markets = await marketsResponse.json();
     const stats = await statsResponse.json();
+    const sync = await syncResponse.json();
     for (const market of markets.items) {
       const option = createElement('option', null, market.name);
       option.value = market.id;
       elements.market.append(option);
     }
-    elements.catalogStats.textContent = `${stats.products} produtos · ${stats.promotions} promoções`;
+    elements.catalogStats.textContent = formatCatalogSummary(stats);
+    const status = formatSyncStatus(sync.items[0]);
+    elements.syncStatus.dataset.tone = status.tone;
+    elements.syncLabel.textContent = status.label;
+    elements.syncDetail.textContent = status.detail;
   } catch {
     elements.catalogStats.textContent = 'Catálogo indisponível';
+    elements.syncStatus.dataset.tone = 'error';
+    elements.syncLabel.textContent = 'Estado indisponível';
+    elements.syncDetail.textContent = 'Não foi possível consultar a sincronização.';
   }
 }
 

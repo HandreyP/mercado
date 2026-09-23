@@ -16,7 +16,7 @@
     "import": "node src/db/import-snapshot.js",
     "start": "node src/server.js",
     "sync": "node src/sync.js",
-    "sync:daily": "node src/sync.js --limit 500 --retry-failed",
+    "sync:daily": "node src/sync.js --limit 500 --retry-failed --attempts 3 --retry-delay-seconds 300 --trigger cron",
     "test": "node --test"
   },
   "dependencies": {

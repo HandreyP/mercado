@@ -77,3 +77,46 @@ test('cria uma execução vazia dentro da transação', async () => {
   assert.equal(result.runId, '8');
   assert.equal(result.products, 0);
 });
+
+test('garante identidade canónica para cada produto importado', async () => {
+  const setup = setupDatabase([
+    { rows: [{ id: '1' }] },
+    { rows: [{ id: '8' }] },
+    { rows: [{ id: '20' }] },
+    { rows: [{ inserted: true, previous_price_cents: null }] },
+    { rows: [] },
+  ]);
+  const canonicalCalls = [];
+  const canonicalProducts = {
+    async ensureForMarketProduct(client, input) {
+      canonicalCalls.push({ client, input });
+      return '30';
+    },
+  };
+  const repository = new ImportRepository({
+    canonicalProducts,
+    database: setup.database,
+  });
+  const snapshot = emptySnapshot();
+  snapshot.products.push({
+    externalId: '1805',
+    name: 'Sal Fino',
+    url: 'https://example.test/sal',
+    categories: [],
+    images: [],
+    package: { normalizedQuantity: 0.25, normalizedUnit: 'kg' },
+    source: { type: 'product-page', url: 'https://example.test/sal' },
+    collectedAt: '2026-09-23T10:00:00Z',
+    offer: { currency: 'EUR', priceCents: 29, promotion: false },
+  });
+
+  await repository.importSnapshot({
+    snapshot,
+    sourceFile: '/tmp/snapshot.json',
+    hash: 'c'.repeat(64),
+  });
+
+  assert.equal(canonicalCalls.length, 1);
+  assert.equal(canonicalCalls[0].input.marketProductId, '20');
+  assert.equal(canonicalCalls[0].input.product.name, 'Sal Fino');
+});

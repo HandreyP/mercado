@@ -181,7 +181,11 @@ async function insertError(client, runId, rejected, fallbackAttemptedAt) {
   );
 }
 
-async function importWithinTransaction(client, { snapshot, sourceFile, hash }) {
+async function importWithinTransaction(
+  client,
+  { snapshot, sourceFile, hash },
+  canonicalProducts,
+) {
   const marketId = await upsertMarket(client, snapshot.market);
   const runId = await createRun(client, marketId, snapshot, sourceFile, hash);
 
@@ -203,6 +207,10 @@ async function importWithinTransaction(client, { snapshot, sourceFile, hash }) {
   const offerChanges = emptyOfferChanges();
   for (const product of snapshot.products) {
     const marketProductId = await upsertProduct(client, marketId, product);
+    await canonicalProducts.ensureForMarketProduct(client, {
+      marketProductId,
+      product,
+    });
     const status = await insertOffer(client, marketProductId, runId, product);
     offerChanges[status] += 1;
     if (status !== 'unchanged') offerChanges.inserted += 1;
@@ -224,14 +232,20 @@ async function importWithinTransaction(client, { snapshot, sourceFile, hash }) {
 }
 
 export class ImportRepository {
-  constructor({ database }) {
+  constructor({
+    database,
+    canonicalProducts = new CanonicalProductRepository({ database }),
+  }) {
     this.database = database;
+    this.canonicalProducts = canonicalProducts;
   }
 
   importSnapshot(input, { client = null } = {}) {
     return this.database.withTransaction(
-      (transactionClient) => importWithinTransaction(transactionClient, input),
+      (transactionClient) =>
+        importWithinTransaction(transactionClient, input, this.canonicalProducts),
       { client },
     );
   }
 }
+import { CanonicalProductRepository } from './canonical-product.repository.js';

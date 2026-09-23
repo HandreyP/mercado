@@ -10,6 +10,7 @@ const SORT_SQL = {
 function mapProduct(row) {
   return {
     id: row.id,
+    canonicalProductId: row.canonical_product_id,
     market: { id: row.market_slug, name: row.market_name },
     externalId: row.external_id,
     name: row.name,
@@ -51,6 +52,7 @@ export class CatalogRepository {
       `SELECT
          mp.id, mp.external_id, mp.name, mp.brand, mp.categories, mp.package,
          mp.url, mp.images->>0 AS image,
+         match.canonical_product_id,
          market.slug AS market_slug, market.name AS market_name,
          offer.currency, offer.price_cents, offer.original_price_cents,
          offer.price_per_base_unit_cents, offer.base_unit, offer.promotion,
@@ -59,6 +61,8 @@ export class CatalogRepository {
          COUNT(*) OVER()::INTEGER AS total_count
        FROM market_products AS mp
        JOIN markets AS market ON market.id = mp.market_id
+       LEFT JOIN product_matches AS match
+         ON match.market_product_id = mp.id AND match.status = 'confirmed'
        JOIN current_offers AS offer ON offer.market_product_id = mp.id
        LEFT JOIN LATERAL (
          SELECT historical.price_cents
@@ -140,16 +144,30 @@ export class CatalogRepository {
       SELECT
         (SELECT COUNT(*)::INTEGER FROM markets) AS markets,
         (SELECT COUNT(*)::INTEGER FROM market_products) AS products,
+        (SELECT COUNT(*)::INTEGER FROM canonical_products) AS canonical_products,
         (SELECT COUNT(*)::INTEGER FROM offers) AS offer_observations,
         (SELECT COUNT(*)::INTEGER FROM current_offers WHERE promotion = TRUE) AS promotions,
+        COALESCE((
+          SELECT (stats->>'discovered')::INTEGER
+          FROM scraping_runs
+          WHERE stats ? 'discovered'
+          ORDER BY imported_at DESC
+          LIMIT 1
+        ), 0) AS discovered_products,
         (SELECT MAX(imported_at) FROM scraping_runs) AS last_import_at
     `);
     const row = result.rows[0];
     return {
       markets: row.markets,
       products: row.products,
+      canonicalProducts: row.canonical_products,
       offerObservations: row.offer_observations,
       promotions: row.promotions,
+      discoveredProducts: row.discovered_products,
+      coveragePercent:
+        row.discovered_products > 0
+          ? Math.min(100, Math.round((row.products / row.discovered_products) * 100))
+          : null,
       lastImportAt: row.last_import_at,
     };
   }

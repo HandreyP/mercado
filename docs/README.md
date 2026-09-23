@@ -31,9 +31,14 @@ Estão implementados:
 - migrações SQL versionadas;
 - importação transacional e idempotente de snapshots;
 - sincronização atómica em lotes de até 500 produtos;
+- repetição do fluxo completo para falhas transitórias de rede;
+- histórico operacional de todas as tentativas de sincronização;
 - cron diário às 03:00 em `Europe/Lisbon`;
+- rotação dos logs do cron por tamanho e retenção;
 - conservação dos documentos originais em `JSONB`;
+- identidades canónicas e correspondências explícitas por produto;
 - API HTTP de produtos, filtros, promoções, estatísticas e histórico;
+- API e painel frontend com estado da última sincronização;
 - frontend simples com abas Produtos/Carrinho;
 - carrinho persistente em `localStorage`.
 
@@ -169,6 +174,8 @@ Valores locais predefinidos:
 | `PORT` | `3000` | Porta HTTP |
 | `MARKET_USER_AGENT` | identificador do projeto | Pedidos às fontes públicas |
 | `POSTGRES_PORT` | `5432` | Porta publicada pelo Compose |
+| `DAILY_SYNC_LOG_MAX_BYTES` | `5242880` | Tamanho que ativa rotação do log diário |
+| `DAILY_SYNC_LOG_RETENTION` | `7` | Número máximo de arquivos antigos do log |
 
 O ficheiro `.env.example` serve de referência. `.env` está ignorado pelo Git, mas
 não é carregado automaticamente: exporte as variáveis no terminal ou use o
@@ -204,16 +211,31 @@ falhas, última recolha e último preço, mas não substitui o catálogo na base
 |---|---|
 | `markets` | Supermercados registados |
 | `market_products` | Identidade de um produto dentro de um mercado |
+| `canonical_products` | Identidade independente de um mercado |
+| `product_matches` | Relação auditável entre produto canónico e produto do mercado |
 | `offers` | Observações históricas de preço |
 | `current_offers` | Última oferta de cada produto |
 | `scraping_runs` | Execuções importadas e respetivo hash |
 | `scraping_errors` | Produtos rejeitados ou com erro |
+| `sync_executions` | Tentativas operacionais, duração, resultado e erro |
 | `raw_documents` | Documento normalizado original em `JSONB` |
 | `schema_migrations` | Migrações já aplicadas |
 
 O hash SHA-256 do snapshot é único. Uma segunda importação termina sem criar nova
 execução, produto, oferta ou documento. Produtos usam a chave lógica
 `(market_id, external_id)` e ofertas usam `(market_product_id, observed_at)`.
+
+### Produtos canónicos
+
+Cada produto de mercado tem uma correspondência confirmada com uma identidade em
+`canonical_products`. Para os dados existentes e novas importações, essa
+identidade começa em relação 1:1, com confiança `1` e motivo
+`initial_identity`/`initial_backfill`. Isto cria a estrutura necessária sem
+afirmar que artigos diferentes são equivalentes.
+
+`product_matches` conserva confiança, método (`automatic` ou `manual`), estado
+(`suggested`, `confirmed` ou `rejected`) e motivo. Uma futura fusão de produtos
+passará por esta relação; não será feita apenas pela semelhança do nome.
 
 ### Migrações
 
@@ -244,6 +266,12 @@ O comando recomendado é:
 npm run sync -- --limit 500 --retry-failed
 ```
 
+Para repetir falhas transitórias do fluxo completo:
+
+```bash
+npm run sync -- --limit 500 --attempts 3 --retry-delay-seconds 300
+```
+
 O fluxo:
 
 1. obtém um advisory lock no PostgreSQL por supermercado;
@@ -252,7 +280,14 @@ O fluxo:
 4. grava o snapshot;
 5. importa o snapshot numa transação;
 6. atualiza o estado local apenas após o `COMMIT`;
-7. liberta o lock e apresenta mudanças de preço.
+7. marca a tentativa como concluída e guarda métricas;
+8. liberta o lock e apresenta mudanças de preço.
+
+Cada tentativa é criada em `sync_executions` antes do acesso ao mercado. Uma
+falha de DNS, timeout, ligação, HTTP 429 ou HTTP 5xx é marcada como `failed` e
+pode repetir o fluxo. Com a configuração diária, as esperas são de 5 e 15
+minutos. Erros definitivos não são repetidos. O estado pode ser `running`,
+`completed` ou `failed`, com início, fim, duração, métricas e erro.
 
 Se outra sincronização estiver ativa, a segunda termina com código 3. Se a
 importação falhar, o estado não avança e os produtos permanecem elegíveis.
@@ -273,8 +308,9 @@ CRON_TZ=Europe/Lisbon
 ```
 
 Executa todos os dias às 03:00, inicia o PostgreSQL se necessário, aplica
-migrações pendentes e processa um lote de 500 com `--retry-failed`. Os logs ficam
-em `logs/daily-sync.log`.
+migrações pendentes e processa um lote de 500 com `--retry-failed`. Faz até três
+tentativas em falhas transitórias. Os logs ficam em `logs/daily-sync.log`; ao
+ultrapassar 5 MB, são arquivados, mantendo sete arquivos por predefinição.
 
 Remover a tarefa:
 
@@ -294,6 +330,8 @@ perdidas durante períodos em que o sistema esteve desligado.
 | `GET` | `/api/stats` | Totais do catálogo |
 | `GET` | `/api/products` | Pesquisa, filtros, ordenação e paginação |
 | `GET` | `/api/products/:id/history` | Histórico de um produto |
+| `GET` | `/api/canonical-products/:id` | Identidade canónica e correspondências |
+| `GET` | `/api/sync-status` | Última tentativa e último sucesso por mercado |
 
 Parâmetros de `/api/products`:
 
@@ -329,6 +367,8 @@ Funcionalidades:
 - adicionar, remover e alterar quantidades;
 - total estimado;
 - persistência do carrinho no navegador.
+- cobertura estimada do catálogo;
+- estado visível da recolha, último sucesso e falha mais recente.
 
 O carrinho é uma simulação: conserva o preço mostrado quando o artigo foi
 adicionado e não verifica stock, loja, entrega ou condições especiais.
@@ -374,6 +414,13 @@ A segunda importação deve informar que o snapshot já existe.
 Uma sincronização forçada sobre três produtos já importados confirmou que as três
 ofertas permaneceram inalteradas e que o total histórico não aumentou.
 
+Em 23/09/2026, a validação real do fluxo novo descobriu 15.997 entradas e
+importou 500 produtos válidos numa tentativa, com 25 rejeições conservadas. O
+catálogo passou para 550 produtos, 550 ofertas, 550 identidades canónicas e 550
+correspondências iniciais. A cobertura observada é de aproximadamente 3% e o
+catálogo contém 386 promoções. Os endpoints de estatísticas, estado da
+sincronização e produto canónico foram verificados contra o PostgreSQL real.
+
 A primeira amostra real teve 50 produtos de 25 categorias, incluindo 20
 promoções. Encontrou e permitiu corrigir multipacks e doses. Quatro produtos sem
 medida permaneceram válidos com aviso, sem inferir informação inexistente.
@@ -394,7 +441,7 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 - preços e disponibilidade podem depender de localização ou loja;
 - o sitemap pode conter produtos sem preço atual;
 - alterações ao HTML podem exigir atualização do adaptador;
-- ainda não existe produto canónico entre mercados;
+- ainda não existem equivalências revistas entre produtos distintos;
 - o histórico só cresce quando novos snapshots são importados;
 - promoções complexas, cartões e cupões ainda não têm modelo completo.
 
@@ -402,8 +449,22 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 
 - [ADR 0001 — PostgreSQL com JSONB](adr/0001-postgresql-jsonb.md)
 - [ADR 0002 — Organização por fronteiras e TDD](adr/0002-organizacao-e-tdd.md)
+- [ADR 0003 — Sincronização resiliente e observável](adr/0003-sync-resiliente.md)
+- [ADR 0004 — Produtos canónicos e correspondências](adr/0004-produtos-canonicos.md)
 
 ## 15. Registo de evolução
+
+### 2026-09-23 — Resiliência, cobertura e identidade canónica
+
+- tentativas de sincronização persistidas antes do primeiro pedido externo;
+- repetição completa apenas para falhas transitórias, com espera progressiva;
+- endpoint `/api/sync-status` e painel operacional simples no frontend;
+- log diário limitado por tamanho e retenção;
+- métrica de cobertura baseada na descoberta mais recente;
+- tabelas `canonical_products` e `product_matches`, com backfill seguro;
+- identidade canónica criada na mesma transação das novas importações;
+- endpoint para consultar correspondências de uma identidade canónica;
+- nenhum segundo mercado adicionado neste marco.
 
 ### 2026-09-21 — Organização por fronteiras e TDD
 
@@ -453,9 +514,11 @@ medida permaneceram válidos com aviso, sem inferir informação inexistente.
 
 ## 16. Próximos marcos
 
-1. aumentar gradualmente a cobertura do Pingo Doce através dos lotes diários;
-2. adicionar métricas e alerta para falhas do cron;
-3. modelar produtos canónicos e correspondências;
-4. adicionar um segundo supermercado;
-5. comparar o carrinho entre mercados;
-6. tratar promoções condicionais e folhetos.
+1. continuar a aumentar a cobertura do Pingo Doce através dos lotes diários;
+2. criar uma fila de revisão e regras conservadoras para sugerir fusões canónicas;
+3. adicionar CI para executar testes e migrações de validação;
+4. adicionar notificação externa opcional para falhas persistentes;
+5. tratar promoções condicionais e folhetos.
+
+Adicionar outro supermercado fica deliberadamente fora dos próximos marcos até
+a cobertura do Pingo Doce e o processo de correspondência estarem validados.

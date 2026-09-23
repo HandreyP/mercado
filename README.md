@@ -23,6 +23,9 @@ O primeiro marco está funcional:
 - mantém um estado incremental por produto e respetivo `lastmod`;
 - permite repetir falhas e criar amostras determinísticas do catálogo;
 - conserva uma cache local para reduzir pedidos repetidos.
+- repete o fluxo diário em falhas transitórias e regista cada tentativa;
+- mantém identidades canónicas e correspondências explícitas;
+- apresenta no frontend o estado da última recolha.
 
 Os folhetos e OCR ainda não fazem parte deste incremento.
 
@@ -73,6 +76,9 @@ Executar o fluxo completo de recolha e importação, em lotes de 500:
 ```bash
 npm run sync:daily
 ```
+
+O fluxo diário faz até três tentativas para falhas transitórias, com espera
+progressiva. O estado fica disponível em `GET /api/sync-status`.
 
 O cron diário pode ser instalado com `./scripts/install-cron.sh`. A documentação
 operacional completa está em [docs/README.md](docs/README.md).
@@ -157,7 +163,7 @@ estado, os produtos voltam a ser elegíveis na execução seguinte.
 src/
   api/                     # parsing e validação de pedidos
   core/                    # pipeline reutilizável e cliente HTTP responsável
-  repositories/           # todo o acesso ao PostgreSQL (*.repository.js)
+  repositories/            # todo o acesso ao PostgreSQL (*.repository.js)
   scrapers/                # um mercado por mercado_<nome>.scrap.js
   services/                # regras de negócio e persistência local
   app.js                   # aplicação Express testável
@@ -186,9 +192,9 @@ semiestruturado, mas o uso principal é relacional: ligar o mesmo produto a vár
 mercados, consultar ofertas no tempo, comparar preços e calcular listas de
 compras.
 
-O desenho futuro usará:
+O desenho implementado usa:
 
-- tabelas relacionais para mercados, produtos, correspondências e ofertas;
+- tabelas relacionais para mercados, produtos canónicos, correspondências e ofertas;
 - constraints e chaves únicas para idempotência;
 - índices por produto, mercado e data;
 - uma coluna `JSONB` para conservar o documento bruto específico de cada fonte.
@@ -218,12 +224,18 @@ detetadas e corrigidas regras para multipacks e doses. Produtos editoriais sem
 medida permanecem válidos, mas são marcados com aviso em vez de receberem uma
 quantidade inventada.
 
+Após o primeiro lote alargado, o catálogo local contém 550 produtos e 550
+identidades canónicas, sobre 15.997 entradas descobertas no Pingo Doce. A
+cobertura continua a crescer em lotes diários de até 500.
+
 ## Limitações atuais
 
 - preços e disponibilidade podem depender da localização ou loja;
 - produtos presentes no sitemap podem estar temporariamente sem preço;
 - alterações ao HTML podem exigir a atualização do adaptador;
-- já existe histórico em PostgreSQL, mas ainda não há correspondência entre mercados;
+- já existe identidade canónica, mas ainda não há equivalências revistas entre
+  produtos distintos;
+- um segundo mercado está deliberadamente fora desta fase;
 - folhetos, condições complexas de promoção e OCR ficam para um marco posterior.
 
 O coletor usa apenas sitemaps e páginas públicas, não chama endpoints internos de

@@ -4,7 +4,12 @@ import { parseProductFilters } from './api/product-filters.js';
 
 const publicDirectory = new URL('../public/', import.meta.url).pathname;
 
-export function createApiHandlers({ catalogRepository, database }) {
+export function createApiHandlers({
+  canonicalProductRepository,
+  catalogRepository,
+  database,
+  syncExecutionRepository,
+}) {
   return {
     async health(_request, response, next) {
       try {
@@ -63,12 +68,47 @@ export function createApiHandlers({ catalogRepository, database }) {
         next(error);
       }
     },
+
+    async syncStatus(_request, response, next) {
+      try {
+        response.json({ items: await syncExecutionRepository.listLatest() });
+      } catch (error) {
+        next(error);
+      }
+    },
+
+    async canonicalProduct(request, response, next) {
+      try {
+        if (!/^\d+$/.test(request.params.id)) {
+          response.status(400).json({ error: 'ID de produto canónico inválido' });
+          return;
+        }
+        const canonical = await canonicalProductRepository.getById(request.params.id);
+        if (!canonical) {
+          response.status(404).json({ error: 'Produto canónico não encontrado' });
+          return;
+        }
+        response.json(canonical);
+      } catch (error) {
+        next(error);
+      }
+    },
   };
 }
 
-export function createApp({ catalogRepository, database }) {
+export function createApp({
+  canonicalProductRepository,
+  catalogRepository,
+  database,
+  syncExecutionRepository,
+}) {
   const app = express();
-  const handlers = createApiHandlers({ catalogRepository, database });
+  const handlers = createApiHandlers({
+    canonicalProductRepository,
+    catalogRepository,
+    database,
+    syncExecutionRepository,
+  });
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '100kb' }));
@@ -78,7 +118,9 @@ export function createApp({ catalogRepository, database }) {
   app.get('/api/markets', handlers.markets);
   app.get('/api/products', handlers.products);
   app.get('/api/products/:id/history', handlers.history);
+  app.get('/api/canonical-products/:id', handlers.canonicalProduct);
   app.get('/api/stats', handlers.stats);
+  app.get('/api/sync-status', handlers.syncStatus);
 
   app.use('/api', (_request, response) => {
     response.status(404).json({ error: 'Endpoint não encontrado' });

@@ -17,13 +17,18 @@
     </header>
 
     <nav class="tabs" aria-label="Secções">
-      <button class="tab active" data-tab="products" aria-selected="true">Produtos</button>
-      <button class="tab" data-tab="cart" aria-selected="false">
+      <button class="tab active" data-tab="products" aria-selected="true" style="color: black;">Produtos</button>
+      <button class="tab" data-tab="cart" aria-selected="false" style="color: black;">
         Carrinho <span id="cart-count" class="badge">0</span>
       </button>
     </nav>
 
     <main>
+      <aside id="sync-status" class="sync-status" data-tone="neutral" aria-live="polite">
+        <strong id="sync-label">A consultar recolha…</strong>
+        <span id="sync-detail">A carregar o estado da sincronização diária.</span>
+      </aside>
+
       <section id="products-tab" class="tab-panel">
         <form id="filters" class="filters">
           <label>

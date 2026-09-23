@@ -19,6 +19,7 @@ test('mapeia linhas SQL para o contrato público de produtos', async () => {
     rows: [
       {
         id: '10',
+        canonical_product_id: '30',
         market_slug: 'pingo-doce',
         market_name: 'Pingo Doce',
         external_id: '1805',
@@ -54,6 +55,7 @@ test('mapeia linhas SQL para o contrato público de produtos', async () => {
 
   assert.equal(result.pagination.total, 1);
   assert.equal(result.items[0].externalId, '1805');
+  assert.equal(result.items[0].canonicalProductId, '30');
   assert.equal(result.items[0].offer.trend, 'down');
   assert.deepEqual(database.calls[0].parameters, ['', null, null, 24, 0]);
 });
@@ -75,4 +77,27 @@ test('lista mercados através do repositório', async () => {
   assert.deepEqual(await repository.listMarkets(), [
     { id: 'pingo-doce', name: 'Pingo Doce' },
   ]);
+});
+
+test('apresenta cobertura do catálogo a partir da descoberta mais recente', async () => {
+  const database = databaseReturning({
+    rows: [
+      {
+        markets: 1,
+        products: 550,
+        canonical_products: 550,
+        offer_observations: 560,
+        promotions: 80,
+        discovered_products: 2200,
+        last_import_at: '2026-09-23T03:06:00Z',
+      },
+    ],
+  });
+  const repository = new CatalogRepository({ database });
+
+  const result = await repository.getCatalogStats();
+
+  assert.equal(result.discoveredProducts, 2200);
+  assert.equal(result.canonicalProducts, 550);
+  assert.equal(result.coveragePercent, 25);
 });
